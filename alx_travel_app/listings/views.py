@@ -6,12 +6,10 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework import viewsets
+from rest_framework import viewsets, permissions
 from .models import Listing, Booking, Payment
 from .serializers import ListingSerializer, BookingSerializer
-from .tasks import send_confirmation_email_task
-
-
+from .tasks import send_confirmation_email_task, send_booking_confirmation_email
 
 # Chapa API Configuration
 CHAPA_API_URL = "https://api.chapa.co/v1/transaction/initialize"
@@ -34,6 +32,19 @@ class BookingViewSet(viewsets.ModelViewSet):
     """
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        """
+        Saves the booking and triggers an email notification.
+        """
+        # Save the booking instance first
+        booking = serializer.save(user=self.request.user)
+
+        # Trigger the asynchronous email task
+        # We pass the booking ID because it's a simple, serializable data type.
+        # Passing the entire object is not recommended.
+        send_booking_confirmation_email.delay(booking.id)
 
 
 class InitiatePaymentView(APIView):
